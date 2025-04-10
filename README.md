@@ -1,4 +1,3 @@
-# images
 
 1. **Glassdoor**  
    - [https://www.glassdoor.com](https://www.glassdoor.com)  
