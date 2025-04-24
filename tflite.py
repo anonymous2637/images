@@ -13,7 +13,6 @@ with open("roi_coordinates.json", "r") as f:
     roi_coordinates = json.load(f)
 
 def is_inside_roi(x, y):
-
     if len(roi_coordinates) != 4:
         return False
     pts = np.array(roi_coordinates, np.int32)
@@ -26,14 +25,14 @@ def draw_roi(frame):
 
 # Load TFLite model
 interpreter = tf.lite.Interpreter(
-    model_path="D:/project/1/tflite_model/1.tflite",
+    model_path="tflite_model/lite2.tflite",
     num_threads=4
 )
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-CONF_THRESHOLD = 0.5
+CONF_THRESHOLD = 0.35
 IOU_THRESHOLD = 0.4
 PERSON_CLASS_ID = 0
 SAVE_INTERVAL = 10
@@ -80,7 +79,6 @@ def preprocess(frame):
 
     return image
 
-
 def run_inference(frame):
     input_data = preprocess(frame)
     interpreter.set_tensor(input_details[0]['index'], input_data)
@@ -89,7 +87,7 @@ def run_inference(frame):
     boxes = interpreter.get_tensor(output_details[0]['index'])[0]
     class_ids = interpreter.get_tensor(output_details[1]['index'])[0]
     scores = interpreter.get_tensor(output_details[2]['index'])[0]
-    
+
     return boxes, class_ids, scores
 
 def apply_nms(boxes, scores, conf_thresh, iou_thresh):
@@ -102,17 +100,43 @@ def apply_nms(boxes, scores, conf_thresh, iou_thresh):
         return []
 
 def process_output(boxes, class_ids, scores, frame_shape):
-    h, w, _ = frame_shape
-    results = []
+    # Normalize all outputs
+    if isinstance(class_ids, np.ndarray):
+        class_ids = class_ids.flatten().tolist()
+    elif not isinstance(class_ids, list):
+        class_ids = [int(class_ids)]
 
-    for i in range(len(scores)):
-        if scores[i] > CONF_THRESHOLD and int(class_ids[i]) == PERSON_CLASS_ID:
-            ymin, xmin, ymax, xmax = boxes[i]
-            x1, y1 = int(xmin * w), int(ymin * h)
-            x2, y2 = int(xmax * w), int(ymax * h)
-            results.append([x1, y1, x2, y2, float(scores[i])])
+    if isinstance(scores, np.ndarray):
+        scores = scores.flatten().tolist()
+    elif not isinstance(scores, list):
+        scores = [float(scores)]
 
-    return results
+    if isinstance(boxes, np.ndarray):
+        if boxes.ndim == 2:
+            boxes = boxes.tolist()
+        elif boxes.ndim == 1:
+            boxes = [boxes.tolist()]
+    elif not isinstance(boxes, list):
+        boxes = [boxes]
+
+    detections = []
+    height, width, _ = frame_shape
+
+    min_len = min(len(class_ids), len(scores), len(boxes))
+    for i in range(min_len):
+        class_id = int(class_ids[i])
+        score = float(scores[i])
+        box = boxes[i]
+
+        if class_id == PERSON_CLASS_ID and score > CONF_THRESHOLD:
+            y_min, x_min, y_max, x_max = box
+            x = int(x_min * width)
+            y = int(y_min * height)
+            w = int((x_max - x_min) * width)
+            h = int((y_max - y_min) * height)
+            detections.append((x, y, x + w, y + h, score))
+
+    return detections
 
 def io_worker(queue):
     while True:
@@ -146,7 +170,6 @@ def process_frames():
 
         boxes, class_ids, scores = run_inference(frame)
         detections = process_output(boxes, class_ids, scores, frame.shape)
-
 
         boxes, scores = [], []
         for x1, y1, x2, y2, score in detections:
