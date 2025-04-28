@@ -1,11 +1,9 @@
 import cv2
 import numpy as np
-import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 import threading
 import time
 import json
-# from db import save_to_db
-# from excel import save_to_excel
 from queue import Queue
 
 # Load ROI coordinates from JSON
@@ -24,18 +22,18 @@ def draw_roi(frame):
         cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
 
 # Load TFLite model
-interpreter = tf.lite.Interpreter(
-    model_path="tflite_model/lite2.tflite",
+interpreter = tflite.Interpreter(
+    model_path="/home/admin/Pedestrian-Using-tflite/tflite_model/lite2.tflite",
     num_threads=4
 )
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-CONF_THRESHOLD = 0.35
-IOU_THRESHOLD = 0.4
+CONF_THRESHOLD = 0.25
+IOU_THRESHOLD = 0.05
 PERSON_CLASS_ID = 0
-SAVE_INTERVAL = 10
+SAVE_INTERVAL = 10 
 
 class VideoStream:
     def __init__(self, src):
@@ -212,8 +210,11 @@ def process_frames():
         cv2.putText(frame, f"Persons: {person_count}", (20, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        cv2.namedWindow("Pedestrian Detection", cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty("Pedestrian Detection", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        # For Raspberry Pi, avoid creating new window every frame
+        if cv2.getWindowProperty("Pedestrian Detection", cv2.WND_PROP_VISIBLE) < 1:
+            cv2.namedWindow("Pedestrian Detection", cv2.WND_PROP_FULLSCREEN)
+            cv2.setWindowProperty("Pedestrian Detection", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
         cv2.imshow("Pedestrian Detection", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
